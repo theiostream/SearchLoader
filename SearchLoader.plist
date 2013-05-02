@@ -1,0 +1,7 @@
+{
+	Filter = {
+		Bundles = ( "com.apple.Search.framework" );
+		Executables = ( "AppIndexer" );
+		Mode = "Any";
+	};
+}

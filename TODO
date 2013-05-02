@@ -1,0 +1,9 @@
+1. NSURL has functions for parsing search:// URLs
+2. Allow a SPSearchResult category for search:// URLs with strings as identifiers.
+
+1. Load bundles from /Library/SearchLoader/SearchBundles
+2. For Spotlight Bundles do not require app plist. Hook SBSBundlePathForShit()
+
+1. Do not rely on 15 as start for domains.
+
+1. Remove AppIndexer errors (destroying index, etc.)
