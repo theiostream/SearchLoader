@@ -3,6 +3,7 @@
 #include <dlfcn.h>
 #include <notify.h>
 
+// check out SPSearchDomainForDisplayIdentifierAndCategory
 NSInteger TLDomain(NSString *displayID, NSString *category) {
 	NSArray *(*SPGetExtendedDomains)(void) = (NSArray *(*)(void))dlsym(RTLD_DEFAULT, "SPGetExtendedDomains");
 	NSArray *domains = (*SPGetExtendedDomains)();
