@@ -8,6 +8,7 @@ libspotlight_FILES = TLLibrary.m
 TWEAK_NAME = SearchLoader
 SearchLoader_FILES = TLDomainHooker.xm #TLApplicationHooker.xm TLBundlePathHooker.xm
 SearchLoader_LDFLAGS = -lspotlight
+SearchLoader_PRIVATE_FRAMEWORKS = Search
 
 include $(THEOS_MAKE_PATH)/library.mk
 include $(THEOS_MAKE_PATH)/tweak.mk
