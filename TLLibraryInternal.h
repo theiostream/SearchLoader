@@ -14,6 +14,21 @@
 #define TLIsOS6 (kCFCoreFoundationVersionNumber >= 793.00)
 #endif
 
+extern NSString *const kSPContentAuxiliarySubtitleKey;
+extern NSString *const kSPContentAuxiliaryTitleKey;
+extern NSString *const kSPContentCategoryKey;
+extern NSString *const kSPContentContentKey;
+extern NSString *const kSPContentExternalIDKey;
+extern NSString *const kSPContentSubtitleKey;
+extern NSString *const kSPContentSummaryKey;
+extern NSString *const kSPContentTitleKey;
+
+@interface SPSpotlightManager : NSObject
++ (SPSpotlightManager *)sharedManager;
+- (void)eraseIndexForApplication:(NSString *)arg1 category:(NSString *)arg2;
+- (void)application:(NSString *)arg1 modifiedRecordIDs:(NSArray *)arg2 forCategory:(NSString *)arg3;
+@end
+
 @class SDSearchQuery;
 @protocol SPSearchDatastore <NSObject>
 - (void)performQuery:(SDSearchQuery *)query withResultsPipe:(SDSearchQuery *)results;
@@ -41,6 +56,8 @@
 - (NSArray *)searchDomains;
 - (NSString *)searchString;
 - (BOOL)cancelled;
+- (char *)domainsVector;
+- (int)domainsVectorCount;
 @end
 
 @interface SDSearchQuery : SPSearchQuery
