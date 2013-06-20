@@ -39,6 +39,10 @@ extern "C" NSArray *SPGetExtendedDomains();
 extern "C" NSString *SPDisplayIdentifierForDomain(int domain);
 extern "C" NSString *SPCategoryForDomain(int domain);
 
+static NSString *NSStringFromNSRange(NSRange range) {
+	return [NSString stringWithFormat:@"(%u, %u)", range.location, range.length];
+}
+
 // Any way to cache the thread dictionary?
 static BOOL TLGetThreadKey(NSString *key) {
 	NSDictionary *threadDictionary = [[NSThread currentThread] threadDictionary];
@@ -180,6 +184,77 @@ MSHook(NSString *, SPDisplayNameForExtendedDomain, int domain) {
 - (void)searchDaemonQueryCompleted:(id)query {
 	TLSetThreadKey(kTLInternetQueryingKey, NO); // So we don't end up in shit because of shitty developers.
 	%orig;
+}
+%end
+
+%hook SBSearchModel
+- (NSURL *)launchingURLForResult:(SPSearchResult *)result withDisplayIdentifier:(NSString *)displayID andSection:(SPSearchResultSection *)section {
+	NSString *url = [result url];
+	NSLog(@"REF: %@", url);
+	
+	__block NSURL *ret = nil;
+	TLIterateExtensions(^(NSString *path){
+		NSDictionary *infoDictionary = [[NSBundle bundleWithPath:path] infoDictionary];
+		if ([[infoDictionary objectForKey:@"SPDisplayIdentifier"] isEqualToString:displayID]) {
+			if ([[infoDictionary objectForKey:@"TLCorrectURL"] boolValue]) {
+				NSRange startRange;
+				NSRange endRange;
+				NSRange targetRange;
+				
+				BOOL startZero = [[infoDictionary objectForKey:@"TLCorrectURLStartZero"] boolValue];
+				BOOL endLength = [[infoDictionary objectForKey:@"TLCorrectURLEndLength"] boolValue];
+				
+				if (!startZero) {
+					NSString *start = [infoDictionary objectForKey:@"TLCorrectURLStartDelimiter"];
+					if (start == nil) return;
+
+					startRange = [url rangeOfString:start];
+					if (startRange.location == NSNotFound) return;
+				}
+				else startRange = NSMakeRange(0, 0);
+				NSLog(@"got start range %@", NSStringFromNSRange(startRange));
+				
+				if (!endLength) {
+					NSString *end = [infoDictionary objectForKey:@"TLCorrectURLEndDelimiter"];
+					if (end == nil) return;
+
+					NSRange searchRange = NSMakeRange(startRange.location + startRange.length, [url length] - (startRange.location + startRange.length));
+					NSLog(@"searchRange: %@", NSStringFromNSRange(searchRange));
+					endRange = [url rangeOfString:end options:kNilOptions range:searchRange];
+					if (endRange.location == NSNotFound) return;
+				}
+				else endRange = NSMakeRange([url length], 0);
+				NSLog(@"got end range %@", NSStringFromNSRange(endRange));
+				
+				targetRange = NSMakeRange(startRange.location + startRange.length, endRange.location - (startRange.location + startRange.length));
+				NSLog(@"targetRange: %@", NSStringFromNSRange(targetRange));
+				NSString *vital = [url substringWithRange:targetRange];
+				NSLog(@"vital: %@", vital);
+				
+				NSString *format = [infoDictionary objectForKey:@"TLCorrectURLFormat"];
+				if (format == nil) format = @"search://<$ID$>/<$C$>/%@";
+
+				// Format: %@ is the extracted string.
+				//	   <$ID$>: display ID
+				//	   <$C$>: category
+				//	   <$D$>: domain
+				
+				NSLog(@"C %@ D %d", [section category], [section domain]);
+
+				format = [format stringByReplacingOccurrencesOfString:@"<$ID$>" withString:displayID];
+				format = [format stringByReplacingOccurrencesOfString:@"<$C$>" withString:[infoDictionary objectForKey:@"SPCategory"]];
+				format = [format stringByReplacingOccurrencesOfString:@"<$D$>" withString:[NSString stringWithFormat:@"%u", [section domain]]];
+				
+				NSLog(@"format %@", format);
+				NSString *corrected = [NSString stringWithFormat:format, vital];
+				NSLog(@"corrected %@", corrected);
+				ret = [NSURL URLWithString:corrected];
+				NSLog(@"ret %@", ret);
+			}
+		}
+	});
+
+	return ret ?: %orig;
 }
 %end
 %end
@@ -339,7 +414,7 @@ MSHook(NSString *, SPDisplayNameForExtendedDomain, int domain) {
 - (void)removeActiveQuery:(id)query {
 	NSLog(@"[SearchLoader] Query being cancelled.");
 
-	if (TLGetThreadKey(kTLExtendedQueryingKey)) TLSetThreadKey(kTLExtendedQueryingKey, NO);
+	TLSetThreadKey(kTLExtendedQueryingKey, NO);
 	%orig;
 }
 %end
@@ -394,6 +469,13 @@ MSHook(NSString *, SBSCopyBundlePathForDisplayIdentifier, NSString *displayIdent
 
 	return bundlePath;
 }
+
+%hook SPContentResult
++ (id)resultWithRecord:(id)record domain:(int)domain displayIdentifier:(NSString *)displayIdentifier query:(NSString *)query {
+	%log;
+	return %orig;
+}
+%end
 
 // Constructor
 
