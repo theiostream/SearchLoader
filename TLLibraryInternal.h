@@ -116,11 +116,27 @@ extern NSString *const kSPContentTitleKey;
 
 @interface SPSearchResultSection : NSObject
 - (unsigned int)domain;
+- (NSString *)category;
+- (NSString *)displayIdentifier;
 @end
 
 @interface SPContentIndexer : NSObject
 + (id)indexerForDisplayIdentifier:(id)arg1 category:(id)arg2;
 - (void)clearIndex;
+@end
+
+@interface SPRecord : NSObject
+@property(retain, nonatomic) NSString *actionURL; // @dynamic actionURL;
+@property(retain, nonatomic) NSString *auxsubtitle; // @dynamic auxsubtitle;
+@property(retain, nonatomic) NSString *auxtitle; // @dynamic auxtitle;
+@property(retain, nonatomic) NSString *content; // @dynamic content;
+@property(retain, nonatomic) NSNumber *cxid; // @dynamic cxid;
+@property(retain, nonatomic) NSDate *date; // @dynamic date;
+@property(retain, nonatomic) NSString *extid; // @dynamic extid;
+@property(retain, nonatomic) NSNumber *generation; // @dynamic generation;
+@property(retain, nonatomic) NSString *subtitle; // @dynamic subtitle;
+@property(retain, nonatomic) NSString *summary; // @dynamic summary;
+@property(retain, nonatomic) NSString *title; // @dynamic title;
 @end
 
 @interface NSURL (TLSearchAdditions)

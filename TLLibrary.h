@@ -13,6 +13,7 @@
 extern "C" {
 #endif
 
+void TLIterateExtensions(void (^handler)(NSString *));
 NSUInteger TLDomain(NSString *displayID, NSString *category);
 
 void TLOpenSearchResult(NSString *displayID, NSString *category, unsigned long long identifier);
