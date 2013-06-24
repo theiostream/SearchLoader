@@ -3,6 +3,18 @@
 #include <dlfcn.h>
 #include <notify.h>
 
+void TLIterateExtensions(void (^handler)(NSString *)) {
+	NSFileManager *fm = [NSFileManager defaultManager];
+	NSString *path = @"/Library/SearchLoader/Applications/";
+	NSArray *contents = [fm contentsOfDirectoryAtPath:path error:nil];
+	
+	for (NSString *file in contents) {
+		if ([[file pathExtension] isEqualToString:@"bundle"]) {
+			handler([path stringByAppendingString:file]);
+		}
+	}
+}
+
 // check out SPSearchDomainForDisplayIdentifierAndCategory
 NSInteger TLDomain(NSString *displayID, NSString *category) {
 	NSArray *(*SPGetExtendedDomains)(void) = (NSArray *(*)(void))dlsym(RTLD_DEFAULT, "SPGetExtendedDomains");

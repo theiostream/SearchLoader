@@ -78,18 +78,6 @@ static inline BOOL TLIsInProcess(const char *process) {
 	return strstr(proc, process) != NULL;
 }
 
-static void TLIterateExtensions(void (^handler)(NSString *)) {
-	NSFileManager *fm = [NSFileManager defaultManager];
-	NSString *path = @"/Library/SearchLoader/Applications/";
-	NSArray *contents = [fm contentsOfDirectoryAtPath:path error:nil];
-	
-	for (NSString *file in contents) {
-		if ([[file pathExtension] isEqualToString:@"bundle"]) {
-			handler([path stringByAppendingString:file]);
-		}
-	}
-}
-
 // ------
 
 static void _TLSetNeedsInternet(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
