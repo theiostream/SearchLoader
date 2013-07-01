@@ -63,7 +63,8 @@ static BOOL TLConstructorIsPad() {
 }
 
 static inline UIImage *TLPadImageForDisplayID(NSString *displayID) {
-	return [%c(UIImage) imageWithContentsOfFile:[NSString stringWithFormat:@"/Library/SearchLoader/Missing/%@.png", displayID]];
+	UIImage *padImage = TLConstructorIsPad() ? [%c(UIImage) imageWithContentsOfFile:[NSString stringWithFormat:@"/Library/SearchLoader/Missing/Pad/%@.png", displayID]] : nil;
+	return padImage ?: [%c(UIImage) imageWithContentsOfFile:[NSString stringWithFormat:@"/Library/SearchLoader/Missing/%@.png", displayID]];
 }
 
 static inline BOOL TLHasSpotlightPlus() {
@@ -90,6 +91,7 @@ static void _TLSetNeedsInternet(CFNotificationCenterRef center, void *observer, 
 	
 	//TLSetNeedsInternet((state != 0));
 	TLSetThreadKey(kTLInternetQueryingKey, (state != 0));
+	[[%c(UIApplication) sharedApplication] setNetworkActivityIndicatorVisible:(state != 0)];
 }
 
 // ------
@@ -171,6 +173,8 @@ MSHook(NSString *, SPDisplayNameForExtendedDomain, int domain) {
 
 - (void)searchDaemonQueryCompleted:(id)query {
 	TLSetThreadKey(kTLInternetQueryingKey, NO); // So we don't end up in shit because of shitty developers.
+	[[%c(UIApplication) sharedApplication] setNetworkActivityIndicatorVisible:NO];
+
 	%orig;
 }
 %end
@@ -200,24 +204,19 @@ MSHook(NSString *, SPDisplayNameForExtendedDomain, int domain) {
 					if (startRange.location == NSNotFound) return;
 				}
 				else startRange = NSMakeRange(0, 0);
-				NSLog(@"got start range %@", NSStringFromNSRange(startRange));
-				
+
 				if (!endLength) {
 					NSString *end = [infoDictionary objectForKey:@"TLCorrectURLEndDelimiter"];
 					if (end == nil) return;
 
 					NSRange searchRange = NSMakeRange(startRange.location + startRange.length, [url length] - (startRange.location + startRange.length));
-					NSLog(@"searchRange: %@", NSStringFromNSRange(searchRange));
 					endRange = [url rangeOfString:end options:kNilOptions range:searchRange];
 					if (endRange.location == NSNotFound) return;
 				}
 				else endRange = NSMakeRange([url length], 0);
-				NSLog(@"got end range %@", NSStringFromNSRange(endRange));
 				
 				targetRange = NSMakeRange(startRange.location + startRange.length, endRange.location - (startRange.location + startRange.length));
-				NSLog(@"targetRange: %@", NSStringFromNSRange(targetRange));
 				NSString *vital = [url substringWithRange:targetRange];
-				NSLog(@"vital: %@", vital);
 				
 				NSString *format = [infoDictionary objectForKey:@"TLCorrectURLFormat"];
 				if (format == nil) format = @"search://<$ID$>/<$C$>/%@";
@@ -227,18 +226,15 @@ MSHook(NSString *, SPDisplayNameForExtendedDomain, int domain) {
 				//	   <$C$>: category
 				//	   <$D$>: domain
 				
-				NSLog(@"C %@ D %d", [section category], [section domain]);
-
 				format = [format stringByReplacingOccurrencesOfString:@"<$ID$>" withString:displayID];
 				format = [format stringByReplacingOccurrencesOfString:@"<$C$>" withString:[infoDictionary objectForKey:@"SPCategory"]];
 				format = [format stringByReplacingOccurrencesOfString:@"<$D$>" withString:[NSString stringWithFormat:@"%u", [section domain]]];
 				
-				NSLog(@"format %@", format);
 				NSString *corrected = [NSString stringWithFormat:format, vital];
-				NSLog(@"corrected %@", corrected);
 				ret = [NSURL URLWithString:corrected];
-				NSLog(@"ret %@", ret);
 			}
+
+			return;
 		}
 	});
 
@@ -254,23 +250,26 @@ MSHook(NSString *, SPDisplayNameForExtendedDomain, int domain) {
 	NSLog(@"-[SBSearchModel _shouldDisplayWebResults]: (Internet) %d", TLGetThreadKey(kTLInternetQueryingKey));
 	return %orig || TLGetThreadKey(kTLInternetQueryingKey);
 }
+
+- (UIImage *)imageForDomain:(NSInteger)domain andDisplayID:(NSString *)displayID {
+	UIImage *img = TLPadImageForDisplayID(displayID);
+	return %orig ?: img;
+}
 %end
 
 %group TLOS6SpringBoardHooks
+- (UIImage *)_imageForDomain:(NSInteger)domain andDisplayID:(NSString *)displayID {
+	UIImage *img = TLPadImageForDisplayID(displayID);
+	
+	if (TLConstructorIsPad() && [displayID isEqualToString:@"com.apple.weather"]) return img;
+	return %orig ?: img;
+}
 %end
 
 %group TLPadOS5SpringBoardHooks
-- (UIImage *)imageForDomain:(NSInteger)domain andDisplayID:(NSString *)displayID {
-	UIImage *img = TLPadImageForDisplayID(displayID);
-	return img ?: %orig;
-}
 %end
 
 %group TLPadOS6SpringBoardHooks
-- (UIImage *)_imageForDomain:(NSInteger)domain andDisplayID:(NSString *)displayID {
-	UIImage *img = TLPadImageForDisplayID(displayID);
-	return img ?: %orig;
-}
 %end
 %end
 
@@ -301,6 +300,7 @@ MSHook(NSString *, SPDisplayNameForExtendedDomain, int domain) {
 
 %group TLSearchdHooks
 // There could be better solutions for this, which don't involve array iteration every time.
+// TODO: IMPLEMENT THIS
 /*%hook SPContentIndexer
 - (void)_openOrCreateIndex {
 	TLSetThreadKey(kTLExtendedQueryingKey, YES);
@@ -322,6 +322,25 @@ MSHook(NSString *, SPDisplayNameForExtendedDomain, int domain) {
 	%orig;
 }
 %end*/
+
+%hook SPContentIndexer
+- (void)beginSearch:(NSString *)search {
+	__block BOOL performSearch = YES;
+	TLIterateExtensions(^(NSString *path){
+		NSDictionary *infoDictionary = [[NSBundle bundleWithPath:path] infoDictionary];
+		if ([[infoDictionary objectForKey:@"SPDisplayIdentifier"] isEqualToString:MSHookIvar<NSString *>(self, "_displayIdentifier")] && ![[infoDictionary objectForKey:@"TLIsSearchBundle"] boolValue]) {
+			if ([search length] < [[infoDictionary objectForKey:@"TLQueryLengthMinimum"] unsignedIntegerValue]) {
+				performSearch = NO;
+			}
+			
+			return;
+		}
+	});
+
+	if (performSearch) %orig;
+	else [self cancelSearch];
+}
+%end
 
 %hook SPBundleManager
 - (void)_loadSearchBundles {
@@ -481,6 +500,7 @@ MSHook(NSString *, SBSCopyBundlePathForDisplayIdentifier, NSString *displayIdent
 	MSHookFunction(MSFindSymbol(MSGetImageByName("/System/Library/PrivateFrameworks/Search.framework/Search"), "_SPDisplayNameForExtendedDomain"), MSHake(SPDisplayNameForExtendedDomain));
 	
 	if ([[[NSBundle mainBundle] bundleIdentifier] isEqualToString:@"com.apple.springboard"]) {
+		CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, &_TLSetNeedsInternet, CFSTR("am.theiostre.searchloader.INTERNALNET"), NULL, 0);
 		%init(TLSpringBoardHooks);
 		
 		if (TLIsOS6) {
@@ -503,7 +523,5 @@ MSHook(NSString *, SBSCopyBundlePathForDisplayIdentifier, NSString *displayIdent
 		MSHookFunction(MSFindSymbol(NULL, "_SBSCopyBundlePathForDisplayIdentifier"), MSHake(SBSCopyBundlePathForDisplayIdentifier));
 		%init(TLAppIndexerHooks);
 	}
-
-	CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, &_TLSetNeedsInternet, CFSTR("am.theiostre.searchloader.INTERNALNET"), NULL, 0);
 }
 

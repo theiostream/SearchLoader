@@ -72,14 +72,14 @@ static NSInteger PSSpecifierSort(PSSpecifier *a1, PSSpecifier *a2, void *context
 
 		[loadedSpecifiers sortUsingFunction:&PSSpecifierSort context:NULL];
 
-		NSIndexSet *indices = [NSIndexSet indexSetWithIndexesInRange:NSMakeRange(added_ui ? 5 : 3, [loadedSpecifiers count])];
+		NSIndexSet *indices = [NSIndexSet indexSetWithIndexesInRange:NSMakeRange(added_ui ? 6 : 4, [loadedSpecifiers count])];
 		[$specifiers insertObjects:loadedSpecifiers atIndexes:indices];
 		
 		// I think they deserve some credit.
 		if (access("/Library/SearchLoader/Internal/extendedwatcher.dat", F_OK) == 0) {
 			PSSpecifier *arielEliranCredits = [PSSpecifier emptyGroupSpecifier];
-			[arielEliranCredits setProperty:@"Search Results were designed by Eliran Manzeli and Ariel Aouizerate, and coded by Daniel Ferreira." forKey:@"footerText"];
-			[$specifiers insertObject:arielEliranCredits atIndex:(added_ui ? 5 : 3) + [loadedSpecifiers count]];
+			[arielEliranCredits setProperty:@"Search Results were designed by Eliran Manzeli (@cydevlop) and Ariel Aouizerate (@AAouiz), and coded by Daniel Ferreira (@ferreiradaniel2)." forKey:@"footerText"];
+			[$specifiers insertObject:arielEliranCredits atIndex:(added_ui ? 6 : 4) + [loadedSpecifiers count]];
 		}
 
 		_specifiers = [[NSArray alloc] initWithArray:$specifiers];

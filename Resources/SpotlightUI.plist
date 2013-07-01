@@ -26,6 +26,21 @@
 			<key>PostNotification</key>
 			<string>am.theiostre.spotlightplus.extension.notification</string>
 		</dict>
+
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<false />
+			<key>defaults</key>
+			<string>am.theiostre.spotlightplus.extension</string>
+			<key>key</key>
+			<string>CollapseOne</string>
+			<key>label</key>
+			<string>Collapse One-Result Sections</string>
+			<key>PostNotification</key>
+			<string>am.theiostre.spotlightplus.extension.notification</string>
+		</dict>
 	</array>
 
 	<key>title</key>

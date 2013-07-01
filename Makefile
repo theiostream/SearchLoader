@@ -45,6 +45,7 @@ internal-stage::
 
 	$(ECHO_NOTHING)mkdir -p $(THEOS_STAGING_DIR)/Library/PreferenceLoader/Preferences$(ECHO_END)
 	$(ECHO_NOTHING)cp TLPreferences.plist $(THEOS_STAGING_DIR)/Library/PreferenceLoader/Preferences$(ECHO_END)
+#	$(ECHO_NOTHING)cp TLPreferences.png $(THEOS_STAGING_DIR)/Library/PreferenceLoader/Preferences$(ECHO_END)
 
 ## (Local) Move libspotlight.dylib to $THEOS/lib
 after-stage::
