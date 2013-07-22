@@ -37,6 +37,7 @@ extern NSString *const kSPContentTitleKey;
 @end
 
 @protocol TLSearchDatastore <SPSearchDatastore>
+@optional
 - (BOOL)blockDatastoreComplete;
 @end
 
