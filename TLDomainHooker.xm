@@ -141,7 +141,7 @@ MSHook(NSString *, SPDisplayNameForExtendedDomain, int domain) {
 	NSString *category = SPCategoryForDomain(domain);
 
 	NSString *ret = _SPDisplayNameForExtendedDomain(domain);
-	if ([ret isEqualToString:category]) {
+	if ([ret isEqualToString:category] || (kCFCoreFoundationVersionNumber>=800 && ret==nil)) {
 		NSArray *extendedDomains = SPGetExtendedDomains();
 
 		for (NSDictionary *dom in extendedDomains) {
@@ -182,7 +182,6 @@ MSHook(NSString *, SPDisplayNameForExtendedDomain, int domain) {
 %hook SBSearchModel
 - (NSURL *)launchingURLForResult:(SPSearchResult *)result withDisplayIdentifier:(NSString *)displayID andSection:(SPSearchResultSection *)section {
 	NSString *url = [result url];
-	NSLog(@"REF: %@", url);
 	
 	__block NSURL *ret = nil;
 	TLIterateExtensions(^(NSString *path){
@@ -266,12 +265,29 @@ MSHook(NSString *, SPDisplayNameForExtendedDomain, int domain) {
 }
 %end
 
+%group TLOS7SpringBoardHooks
+/*- (id)_imageForResult:(id)arg1 inSection:(id)arg2 withCompletionBlock:(id)arg3 {
+	return %orig;
+}*/
+// If anyone asks for this, I'll implement it.
+// But at the state of things, it's not even worth the effort.
+// I'm sorry.
+%end
+
 %group TLPadOS5SpringBoardHooks
 %end
 
 %group TLPadOS6SpringBoardHooks
 %end
 %end
+
+/*
+related to _imageForResult:
+%hook SBSearchViewController
+- (BOOL)_shouldDisplayImagesForDomain:(int)domain {
+	return %orig;
+}
+%end*/
 
 // searchd
 
@@ -369,8 +385,6 @@ MSHook(NSString *, SPDisplayNameForExtendedDomain, int domain) {
 %hook NSBundle
 - (NSBundle *)initWithPath:(NSString *)path {
 	if (TLGetThreadKey(kTLLoadingBundlesKey)) {
-		%log;
-
 		NSBundle *bundle = %orig;
 		if (bundle == nil && ([path hasPrefix:kTLDefaultSearchBundleDirectory])) {
 			NSString *bundlename = [path substringFromIndex:[kTLDefaultSearchBundleDirectory length]];
@@ -477,12 +491,12 @@ MSHook(NSString *, SBSCopyBundlePathForDisplayIdentifier, NSString *displayIdent
 	return bundlePath;
 }
 
-%hook SPContentResult
+/*%hook SPContentResult
 + (id)resultWithRecord:(id)record domain:(int)domain displayIdentifier:(NSString *)displayIdentifier query:(NSString *)query {
 	%log;
 	return %orig;
 }
-%end
+%end*/
 
 // Constructor
 
@@ -497,13 +511,18 @@ MSHook(NSString *, SBSCopyBundlePathForDisplayIdentifier, NSString *displayIdent
 	
 	%init; // DEBUG. Nothing is actually inside _ungrouped.
 	MSHookFunction(MSFindSymbol(MSGetImageByName("/System/Library/PrivateFrameworks/Search.framework/Search"), "_SPGetExtendedDomains"), MSHake(SPGetExtendedDomains));
-	MSHookFunction(MSFindSymbol(MSGetImageByName("/System/Library/PrivateFrameworks/Search.framework/Search"), "_SPDisplayNameForExtendedDomain"), MSHake(SPDisplayNameForExtendedDomain));
+	
+	const char *displayNameSymbol = kCFCoreFoundationVersionNumber>=800 ? "_SPDisplayNameForDomain" : "_SPDisplayNameForExtendedDomain";
+	MSHookFunction(MSFindSymbol(MSGetImageByName("/System/Library/PrivateFrameworks/Search.framework/Search"), displayNameSymbol), MSHake(SPDisplayNameForExtendedDomain));
 	
 	if ([[[NSBundle mainBundle] bundleIdentifier] isEqualToString:@"com.apple.springboard"]) {
 		CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, &_TLSetNeedsInternet, CFSTR("am.theiostre.searchloader.INTERNALNET"), NULL, 0);
 		%init(TLSpringBoardHooks);
 		
-		if (TLIsOS6) {
+		if (kCFCoreFoundationVersionNumber >= 800) {
+			%init(TLOS7SpringBoardHooks);
+		}
+		else if (TLIsOS6) {
 			%init(TLOS6SpringBoardHooks);
 			if (TLConstructorIsPad()) %init(TLPadOS6SpringBoardHooks);
 		}
