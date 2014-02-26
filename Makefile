@@ -3,6 +3,8 @@ GO_EASY_ON_ME=1
 
 TARGET = ::4.3
 
+ARCHS = armv7 arm64
+
 include theos/makefiles/common.mk
 
 ## Install Scripts
