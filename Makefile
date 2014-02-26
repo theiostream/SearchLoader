@@ -1,6 +1,3 @@
-# I hate having to do this, but logos :(
-GO_EASY_ON_ME=1
-
 TARGET = ::4.3
 
 ARCHS = armv7 arm64

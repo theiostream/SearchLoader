@@ -39,8 +39,9 @@ extern "C" NSArray *SPGetExtendedDomains();
 extern "C" NSString *SPDisplayIdentifierForDomain(int domain);
 extern "C" NSString *SPCategoryForDomain(int domain);
 
+__attribute__((unused))
 static NSString *NSStringFromNSRange(NSRange range) {
-	return [NSString stringWithFormat:@"(%u, %u)", range.location, range.length];
+	return [NSString stringWithFormat:@"(%lu, %lu)", (unsigned long)range.location, (unsigned long)range.length];
 }
 
 // Any way to cache the thread dictionary?
@@ -437,6 +438,14 @@ related to _imageForResult:
 
 	TLSetThreadKey(kTLExtendedQueryingKey, NO);
 	%orig;
+
+	// Inform datastores.
+	NSArray *datastores = [[SPBundleManager sharedManager] datastores];
+
+	for (NSObject<TLSearchDatastore> *datastore in datastores) {
+		if ([datastore respondsToSelector:@selector(searchClientDidCancelQuery)])
+			[datastore searchClientDidCancelQuery];
+	}
 }
 %end
 %end

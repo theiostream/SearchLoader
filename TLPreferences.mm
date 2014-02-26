@@ -10,9 +10,9 @@
 
 static NSString **pPSTableCellUseEtchedAppearanceKey = NULL;
 
-static NSInteger PSSpecifierSort(PSSpecifier *a1, PSSpecifier *a2, void *context) {
-	NSString *string1 = [a1 name];
-	NSString *string2 = [a2 name];
+static NSInteger PSSpecifierSort(id a1, id a2, void *context) {
+	NSString *string1 = [(PSSpecifier *)a1 name];
+	NSString *string2 = [(PSSpecifier *)a2 name];
 	
 	return [string1 localizedCaseInsensitiveCompare:string2];
 }

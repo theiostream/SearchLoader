@@ -23,6 +23,11 @@ extern NSString *const kSPContentSubtitleKey;
 extern NSString *const kSPContentSummaryKey;
 extern NSString *const kSPContentTitleKey;
 
+@interface SPBundleManager : NSObject
++ (id)sharedManager;
+- (NSArray *)datastores;
+@end
+
 @interface SPSpotlightManager : NSObject
 + (SPSpotlightManager *)sharedManager;
 - (void)eraseIndexForApplication:(NSString *)arg1 category:(NSString *)arg2;
@@ -39,6 +44,7 @@ extern NSString *const kSPContentTitleKey;
 @protocol TLSearchDatastore <SPSearchDatastore>
 @optional
 - (BOOL)blockDatastoreComplete;
+- (void)searchClientDidCancelQuery;
 @end
 
 @protocol SPSpotlightDatastore <NSObject>
@@ -124,6 +130,7 @@ extern NSString *const kSPContentTitleKey;
 @interface SPContentIndexer : NSObject
 + (id)indexerForDisplayIdentifier:(id)arg1 category:(id)arg2;
 - (void)clearIndex;
+- (void)cancelSearch;
 @end
 
 @interface SPRecord : NSObject
