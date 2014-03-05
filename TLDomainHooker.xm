@@ -178,9 +178,7 @@ MSHook(NSString *, SPDisplayNameForExtendedDomain, int domain) {
 
 	%orig;
 }
-%end
 
-%hook SBSearchModel
 - (NSURL *)launchingURLForResult:(SPSearchResult *)result withDisplayIdentifier:(NSString *)displayID andSection:(SPSearchResultSection *)section {
 	NSString *url = [result url];
 	
@@ -266,19 +264,27 @@ MSHook(NSString *, SPDisplayNameForExtendedDomain, int domain) {
 }
 %end
 
-%group TLOS7SpringBoardHooks
-/*- (id)_imageForResult:(id)arg1 inSection:(id)arg2 withCompletionBlock:(id)arg3 {
-	return %orig;
-}*/
-// If anyone asks for this, I'll implement it.
-// But at the state of things, it's not even worth the effort.
-// I'm sorry.
-%end
-
 %group TLPadOS5SpringBoardHooks
 %end
 
 %group TLPadOS6SpringBoardHooks
+%end
+%end
+
+%group TLOS7SpringBoardHooks
+%hook SBSearchViewController
+- (BOOL)_shouldDisplayImagesForDomain:(NSInteger)domain {
+	__block BOOL ret = %orig;
+	
+	TLIterateExtensions(^(NSString *path){
+		NSDictionary *infoDictionary = [[NSBundle bundleWithPath:path] infoDictionary];
+		if (TLDomain([infoDictionary objectForKey:@"SPDisplayIdentifier"], [infoDictionary objectForKey:@"SPCategory"]) == domain) {
+			ret = ret || [[infoDictionary objectForKey:@"TLImageResults"] boolValue];
+		}
+	});
+
+	return ret;
+}
 %end
 %end
 
@@ -460,7 +466,10 @@ related to _imageForResult:
 	BOOL ret = %orig;
 	if (!$processedSearchBundle && [[specifier objectForKey:@"bundle"] isEqualToString:@"SearchSettings"]) {
 		MSHookFunction(MSFindSymbol(MSGetImageByName("/System/Library/PrivateFrameworks/Search.framework/Search"), "_SPGetExtendedDomains"), MSHake(SPGetExtendedDomains));
-		MSHookFunction(MSFindSymbol(MSGetImageByName("/System/Library/PrivateFrameworks/Search.framework/Search"), "_SPDisplayNameForExtendedDomain"), MSHake(SPDisplayNameForExtendedDomain));
+		
+		const char *displayNameSymbol = kCFCoreFoundationVersionNumber>=800 ? "_SPDisplayNameForDomain" : "_SPDisplayNameForExtendedDomain";
+		MSHookFunction(MSFindSymbol(MSGetImageByName("/System/Library/PrivateFrameworks/Search.framework/Search"), displayNameSymbol), MSHake(SPDisplayNameForExtendedDomain));
+		
 		$processedSearchBundle = YES;
 	}
 
