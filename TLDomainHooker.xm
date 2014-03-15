@@ -146,7 +146,7 @@ MSHook(NSString *, SPDisplayNameForExtendedDomain, int domain) {
 		NSArray *extendedDomains = SPGetExtendedDomains();
 
 		for (NSDictionary *dom in extendedDomains) {
-			if ([[dom objectForKey:@"SPDisplayIdentifier"] isEqualToString:SPDisplayIdentifierForDomain(domain)]) {
+			if ([[dom objectForKey:@"SPDisplayIdentifier"] isEqualToString:SPDisplayIdentifierForDomain(domain)] && [[dom objectForKey:@"SPCategory"] isEqualToString:category]) {
 				ret = [dom objectForKey:@"TLDisplayName"] ?: ret;
 			}
 		}
