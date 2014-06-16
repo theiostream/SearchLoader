@@ -274,16 +274,27 @@ MSHook(NSString *, SPDisplayNameForExtendedDomain, int domain) {
 %group TLOS7SpringBoardHooks
 %hook SBSearchViewController
 - (BOOL)_shouldDisplayImagesForDomain:(NSInteger)domain {
-	__block BOOL ret = %orig;
-	
-	TLIterateExtensions(^(NSString *path){
-		NSDictionary *infoDictionary = [[NSBundle bundleWithPath:path] infoDictionary];
-		if (TLDomain([infoDictionary objectForKey:@"SPDisplayIdentifier"], [infoDictionary objectForKey:@"SPCategory"]) == domain) {
-			ret = ret || [[infoDictionary objectForKey:@"TLImageResults"] boolValue];
-		}
+
+	// This is to optimize the performance of this method, as it is called a lot.
+	static NSMutableDictionary *imageResults = nil;
+	static dispatch_once_t onceToken = 0;
+
+	dispatch_once(&onceToken, ^{
+		imageResults = [[NSMutableDictionary alloc] init];
+
+		TLIterateExtensions(^(NSString *path) {
+			NSDictionary *infoDictionary = [[NSBundle bundleWithPath:path] infoDictionary];
+			NSNumber *domain = [NSNumber numberWithInteger:TLDomain([infoDictionary objectForKey:@"SPDisplayIdentifier"], [infoDictionary objectForKey:@"SPCategory"])];
+			NSNumber *value = [infoDictionary objectForKey:@"TLImageResults"];
+			if (value)
+				[imageResults setObject:value forKey:domain];
+
+		});
 	});
 
-	return ret;
+	NSNumber *value = [imageResults objectForKey:[NSNumber numberWithInteger:domain]];
+	return %orig || [value boolValue];
+
 }
 %end
 %end
