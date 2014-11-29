@@ -3,12 +3,22 @@
 
 #include <Foundation/Foundation.h>
 
-#define AppIndexerPlist_ "/System/Library/LaunchDaemons/com.apple.search.appindexer.plist"
+#ifndef kCFCoreFoundationVersionNumber_iOS_8_0
+#define kCFCoreFoundationVersionNumber_iOS_8_0 1140.10
+#endif
+
 #define SubstrateBootstrap_ "/Library/Frameworks/CydiaSubstrate.framework/Libraries/SubstrateBootstrap.dylib"
 int main() {
+	NSString *AppIndexerPlist_;
+	if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_8_0) {
+		AppIndexerPlist_ = @"/Library/LaunchDaemons/com.apple.search.appindexer.plist";
+	} else {
+		AppIndexerPlist_ = @"/System/Library/LaunchDaemons/com.apple.search.appindexer.plist";
+	}
+
 	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 
-	NSMutableDictionary *root = [NSMutableDictionary dictionaryWithContentsOfFile:@AppIndexerPlist_];
+	NSMutableDictionary *root = [NSMutableDictionary dictionaryWithContentsOfFile:AppIndexerPlist_];
 	if (root == nil)
 		return 1;
 	
@@ -41,7 +51,7 @@ int main() {
 	if (data == nil)
 		return 1;
 	
-	if (![data writeToFile:@AppIndexerPlist_ atomically:YES])
+	if (![data writeToFile:AppIndexerPlist_ atomically:YES])
 		return 1;
 	
 	[pool drain];
