@@ -24,25 +24,34 @@
 #include <signal.h>
 
 #import <SearchLoader/TLLibrary.h>
-#define kTLExtendedQueryingKey @"TLExtendedQuerying"
-#define kTLInternetQueryingKey @"TLInternetQuerying"
-#define kTLLoadingBundlesKey @"TLLoadingBundles"
-#define kTLAppIndexerInitKey @"TLAppIndexerInit"
 
-#define kTLDefaultSearchBundleDirectory @"/System/Library/SearchBundles/"
-#define kTLCustomSearchBundleDirectory @"/Library/SearchLoader/SearchBundles/"
-#define kTLInternalOS6SearchBundleDirectory @"/Library/SearchLoader/Internal/OS6/"
+#define TLFileExists(file) [[NSFileManager defaultManager] fileExistsAtPath:file]
 
-#define TLFileExists(file) [[NSFileManager defaultManager] fileExistsAtPath: file ]
+static NSString * const kTLExtendedQueryingKey = @"TLExtendedQuerying";
+static NSString * const kTLInternetQueryingKey = @"TLInternetQuerying";
+static NSString * const kTLLoadingBundlesKey = @"TLLoadingBundles";
+static NSString * const kTLAppIndexerInitKey = @"TLAppIndexerInit";
+
+static NSString * const kTLDefaultSearchBundleDirectory = @"/System/Library/SearchBundles/";
+static NSString * const kTLCustomSearchBundleDirectory = @"/Library/SearchLoader/SearchBundles/";
+static NSString * const kTLInternalOS6SearchBundleDirectory = @"/Library/SearchLoader/Internal/OS6/";
 
 extern "C" NSArray *SPGetExtendedDomains();
 extern "C" NSString *SPDisplayIdentifierForDomain(int domain);
 extern "C" NSString *SPCategoryForDomain(int domain);
 
-__attribute__((unused))
-static NSString *NSStringFromNSRange(NSRange range) {
-	return [NSString stringWithFormat:@"(%lu, %lu)", (unsigned long)range.location, (unsigned long)range.length];
-}
+static BOOL TLGetThreadKey(NSString *key);
+static void TLSetThreadKey(NSString *key, BOOL value);
+
+static BOOL TLConstructorIsPad();
+static inline UIImage *TLPadImageForDisplayID(NSString *displayID);
+static inline BOOL TLIsInProcess(const char *process);
+
+static void TLRebuildExtendedDomainCache();
+
+static void _TLSetNeedsInternet(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo);
+
+static NSMutableArray *TLExtendedDomains = nil;
 
 // Any way to cache the thread dictionary?
 static BOOL TLGetThreadKey(NSString *key) {
@@ -68,16 +77,53 @@ static inline UIImage *TLPadImageForDisplayID(NSString *displayID) {
 	return padImage ?: [%c(UIImage) imageWithContentsOfFile:[NSString stringWithFormat:@"/Library/SearchLoader/Missing/%@.png", displayID]];
 }
 
-static inline BOOL TLHasSpotlightPlus() {
-	return access("/Library/MobileSubstrate/DynamicLibraries/SpotlightPlus.dylib", F_OK) != -1;
-}
-
 static inline BOOL TLIsInProcess(const char *process) {
 	char proc[PATH_MAX];
 	uint32_t size = sizeof(proc);
 	
 	_NSGetExecutablePath(proc, &size);
 	return strstr(proc, process) != NULL;
+}
+
+static void TLRebuildExtendedDomainCache() {
+	NSMutableArray *extendedDomains = [[NSMutableArray alloc] init];
+	NSMutableArray *internetDomains = [NSMutableArray array];
+
+	TLIterateExtensions(^(NSString *path) {
+		NSBundle *bundle = [NSBundle bundleWithPath:path];
+		NSDictionary *info = [bundle infoDictionary];
+		
+		if ([[info objectForKey:@"TLIsSearchBundle"] boolValue]) {
+			if (TLIsInProcess("AppIndexer")) return;
+		}
+
+		NSMutableDictionary *extendedDomainInfo = [NSMutableDictionary dictionary];
+		NSString *displayIdentifier = [info objectForKey:@"SPDisplayIdentifier"];
+		NSString *category = [info objectForKey:@"SPCategory"];
+		NSArray *requiredCapabilities = [extendedDomainInfo objectForKey:@"SPRequiredCapabilities"];
+		NSString *displayName = [extendedDomainInfo objectForKey:@"TLDisplayName"];
+		NSNumber *isSearchBundle = [extendedDomainInfo objectForKey:@"TLIsSearchBundle"];
+
+		[extendedDomainInfo setObject:displayIdentifier forKey:@"SPDisplayIdentifier"];
+		[extendedDomainInfo setObject:category forKey:@"SPCategory"];
+
+		if (requiredCapabilities)
+			   [extendedDomainInfo setObject:requiredCapabilities forKey:@"SPRequiredCapabilities"];
+
+		if (displayName)
+			[extendedDomainInfo setObject:displayName forKey:@"TLDisplayName"];
+
+		if (isSearchBundle)
+			[extendedDomainInfo setObject:isSearchBundle forKey:@"TLIsSearchBundle"];
+
+		NSMutableArray *destination = [[info objectForKey:@"TLUsesInternet"] boolValue] ? internetDomains : extendedDomains;
+		[destination addObject:extendedDomainInfo];
+	});
+
+	[extendedDomains addObjectsFromArray:internetDomains];
+
+	[TLExtendedDomains release];
+	TLExtendedDomains = extendedDomains;
 }
 
 // ------
@@ -90,9 +136,9 @@ static void _TLSetNeedsInternet(CFNotificationCenterRef center, void *observer, 
 	notify_get_state(token, &state);
 	notify_cancel(token);
 	
-	//TLSetNeedsInternet((state != 0));
-	TLSetThreadKey(kTLInternetQueryingKey, (state != 0));
-	[[%c(UIApplication) sharedApplication] setNetworkActivityIndicatorVisible:(state != 0)];
+	BOOL isQueryingInternet = !!state;
+	TLSetThreadKey(kTLInternetQueryingKey, isQueryingInternet);
+	[[%c(UIApplication) sharedApplication] setNetworkActivityIndicatorVisible:isQueryingInternet];
 }
 
 // ------
@@ -103,36 +149,7 @@ static void _TLSetNeedsInternet(CFNotificationCenterRef center, void *observer, 
 // TODO: Investigate hooking SPAllDomainsVector.
 MSHook(NSArray *, SPGetExtendedDomains) {
 	NSMutableArray *ret = [NSMutableArray arrayWithArray:_SPGetExtendedDomains()];
-	NSMutableArray *internet = [NSMutableArray array];
-	
-	TLIterateExtensions(^(NSString *path){
-		NSBundle *bundle = [NSBundle bundleWithPath:path];
-		NSDictionary *info = [bundle infoDictionary];
-		NSString *displayID = [info objectForKey:@"SPDisplayIdentifier"];
-		
-		// SBSCopyBundlePathForDisplayIdentifier freezes. We may need a new thread here or something.
-		/*NSString *(*SBSCopyBundlePathForDisplayIdentifier)(NSString *) = (NSString *(*)(NSString *))dlsym(RTLD_DEFAULT, "SBSCopyBundlePathForDisplayIdentifier");
-		if (!(*SBSCopyBundlePathForDisplayIdentifier)(displayID)) {
-			if (![[info objectForKey:@"TLForceAppForSpotlightPlus"] boolValue]) continue;
-			if (!TLHasSpotlightPlus()) continue;
-		}*/
-		
-		if ([[info objectForKey:@"TLIsSearchBundle"] boolValue]) {
-			if (TLIsInProcess("AppIndexer")) return;
-		}
-
-		NSMutableDictionary *dict = [NSMutableDictionary dictionary];
-		[dict setObject:displayID forKey:@"SPDisplayIdentifier"];
-		[dict setObject:[info objectForKey:@"SPCategory"] forKey:@"SPCategory"];
-		if ([info objectForKey:@"SPRequiredCapabilities"]) [dict setObject:[info objectForKey:@"SPRequiredCapabilities"] forKey:@"SPRequiredCapabilities"];
-		if ([info objectForKey:@"TLDisplayName"]) [dict setObject:[info objectForKey:@"TLDisplayName"] forKey:@"TLDisplayName"];
-		if (TLGetThreadKey(kTLExtendedQueryingKey) && [info objectForKey:@"TLIsSearchBundle"]) [dict setObject:[info objectForKey:@"TLIsSearchBundle"] forKey:@"TLIsSearchBundle"];
-
-		NSMutableArray *tgt = [[info objectForKey:@"TLUsesInternet"] boolValue] ? internet : ret;
-		[tgt addObject:dict];
-	});
-	
-	[ret addObjectsFromArray:internet];
+	[ret addObjectsFromArray:TLExtendedDomains];
 	
 	return ret;
 }
@@ -140,14 +157,16 @@ MSHook(NSArray *, SPGetExtendedDomains) {
 // TODO: Support Localization.
 MSHook(NSString *, SPDisplayNameForExtendedDomain, int domain) {
 	NSString *category = SPCategoryForDomain(domain);
-
 	NSString *ret = _SPDisplayNameForExtendedDomain(domain);
-	if ([ret isEqualToString:category] || (kCFCoreFoundationVersionNumber>=800 && ret==nil)) {
+
+	if ([ret isEqualToString:category] || (TLIsOS7 && ret==nil)) {
 		NSArray *extendedDomains = SPGetExtendedDomains();
 
-		for (NSDictionary *dom in extendedDomains) {
-			if ([[dom objectForKey:@"SPDisplayIdentifier"] isEqualToString:SPDisplayIdentifierForDomain(domain)] && [[dom objectForKey:@"SPCategory"] isEqualToString:category]) {
-				ret = [dom objectForKey:@"TLDisplayName"] ?: ret;
+		for (NSDictionary *extendedDomain in extendedDomains) {
+			NSString *displayIdentifier = SPDisplayIdentifierForDomain(domain);
+
+			if ([[extendedDomain objectForKey:@"SPDisplayIdentifier"] isEqualToString:displayIdentifier] && [[extendedDomain objectForKey:@"SPCategory"] isEqualToString:category]) {
+				ret = [extendedDomain objectForKey:@"TLDisplayName"] ?: ret;
 			}
 		}
 	}
@@ -160,6 +179,7 @@ MSHook(NSString *, SPDisplayNameForExtendedDomain, int domain) {
 // there is a reason for this.
 %group TLSpringBoardHooks
 %hook SBSearchModel
+
 - (void)setQueryString:(NSString *)string {
 	// This bypasses some sort of Apple's optimization system.
 	// Since logically: If there was no result for "Nol", "Nolan" would be impossible, so it doesn't search for that at all.
@@ -238,11 +258,13 @@ MSHook(NSString *, SPDisplayNameForExtendedDomain, int domain) {
 
 	return ret ?: %orig;
 }
+
 %end
 %end
 
 %hook SBSearchModel
 %group TLOS5SpringBoardHooks
+
 // Let's hope this works.
 - (BOOL)_shouldDisplayWebSearchResults {
 	NSLog(@"-[SBSearchModel _shouldDisplayWebResults]: (Internet) %d", TLGetThreadKey(kTLInternetQueryingKey));
@@ -253,15 +275,18 @@ MSHook(NSString *, SPDisplayNameForExtendedDomain, int domain) {
 	UIImage *img = TLPadImageForDisplayID(displayID);
 	return %orig ?: img;
 }
+
 %end
 
 %group TLOS6SpringBoardHooks
+
 - (UIImage *)_imageForDomain:(NSInteger)domain andDisplayID:(NSString *)displayID {
 	UIImage *img = TLPadImageForDisplayID(displayID);
 	
 	if (TLConstructorIsPad() && [displayID isEqualToString:@"com.apple.weather"]) return img;
 	return %orig ?: img;
 }
+
 %end
 
 %group TLPadOS5SpringBoardHooks
@@ -273,6 +298,7 @@ MSHook(NSString *, SPDisplayNameForExtendedDomain, int domain) {
 
 %group TLOS7SpringBoardHooks
 %hook SBSearchViewController
+
 - (BOOL)_shouldDisplayImagesForDomain:(NSInteger)domain {
 
 	// This is to optimize the performance of this method, as it is called a lot.
@@ -286,6 +312,7 @@ MSHook(NSString *, SPDisplayNameForExtendedDomain, int domain) {
 			NSDictionary *infoDictionary = [[NSBundle bundleWithPath:path] infoDictionary];
 			NSNumber *domain = [NSNumber numberWithInteger:TLDomain([infoDictionary objectForKey:@"SPDisplayIdentifier"], [infoDictionary objectForKey:@"SPCategory"])];
 			NSNumber *value = [infoDictionary objectForKey:@"TLImageResults"];
+
 			if (value)
 				[imageResults setObject:value forKey:domain];
 
@@ -296,22 +323,16 @@ MSHook(NSString *, SPDisplayNameForExtendedDomain, int domain) {
 	return %orig || [value boolValue];
 
 }
-%end
-%end
 
-/*
-related to _imageForResult:
-%hook SBSearchViewController
-- (BOOL)_shouldDisplayImagesForDomain:(int)domain {
-	return %orig;
-}
-%end*/
+%end
+%end
 
 // searchd
 
 /* This hook took me 3 days */
 %group TLExtendedHooks
 %hook SPExtendedDatastore
+
 - (NSArray *)searchDomains {
 	TLSetThreadKey(kTLExtendedQueryingKey, YES);
 	NSArray *extendedDomains = SPGetExtendedDomains();
@@ -319,8 +340,9 @@ related to _imageForResult:
 	
 	NSMutableArray *ret = [NSMutableArray array];
 
-	unsigned int iterator = kTLExtendedIndexingStart; // dude i honestly fucking hate keeping this hardcoded amount.
-	for (unsigned int i=0; i<[extendedDomains count]; i++) {
+	unsigned int iterator = kTLExtendedIndexingStart;
+	
+	for (unsigned int i=0;  i<[extendedDomains count]; i++) {
 		if (![[[extendedDomains objectAtIndex:i] objectForKey:@"TLIsSearchBundle"] boolValue])
 			[ret addObject:[NSNumber numberWithUnsignedInt:iterator]];
 
@@ -329,39 +351,19 @@ related to _imageForResult:
 	
 	return ret;
 }
+
 %end
 %end
 
 %group TLSearchdHooks
-// There could be better solutions for this, which don't involve array iteration every time.
-// TODO: IMPLEMENT THIS
-/*%hook SPContentIndexer
-- (void)_openOrCreateIndex {
-	TLSetThreadKey(kTLExtendedQueryingKey, YES);
-	NSArray *domains = SPGetExtendedDomains();
-	TLSetThreadKey(kTLExtendedQueryingKey, NO);
-
-	__block BOOL shouldStop = NO;
-	[domains enumerateObjectsUsingBlock:^(id obj, NSUInteger idx, BOOL *stop){
-		if ([[(NSDictionary *)obj objectForKey:@"SPDisplayIdentifier"] isEqualToString:MSHookIvar<NSString *>(self, "_displayIdentifier")] &&
-		    [[(NSDictionary *)obj objectForKey:@"SPCategory"] isEqualToString:MSHookIvar<NSString *>(self, "_category")]) {
-		    	if ([[(NSDictionary *)obj objectForKey:@"TLIsSearchBundle"] boolValue]) {
-				shouldStop = YES;
-				*stop = YES;
-			}
-		}
-	}];
-
-	if (shouldStop) return;
-	%orig;
-}
-%end*/
-
 %hook SPContentIndexer
+
 - (void)beginSearch:(NSString *)search {
 	__block BOOL performSearch = YES;
-	TLIterateExtensions(^(NSString *path){
+
+	TLIterateExtensions(^(NSString *path ){
 		NSDictionary *infoDictionary = [[NSBundle bundleWithPath:path] infoDictionary];
+
 		if ([[infoDictionary objectForKey:@"SPDisplayIdentifier"] isEqualToString:MSHookIvar<NSString *>(self, "_displayIdentifier")] && ![[infoDictionary objectForKey:@"TLIsSearchBundle"] boolValue]) {
 			if ([search length] < [[infoDictionary objectForKey:@"TLQueryLengthMinimum"] unsignedIntegerValue]) {
 				performSearch = NO;
@@ -374,9 +376,11 @@ related to _imageForResult:
 	if (performSearch) %orig;
 	else [self cancelSearch];
 }
+
 %end
 
 %hook SPBundleManager
+
 - (void)_loadSearchBundles {
 	TLSetThreadKey(kTLLoadingBundlesKey, YES);
 	%orig;
@@ -384,9 +388,11 @@ related to _imageForResult:
 	
 	%init(TLExtendedHooks);
 }
+
 %end
 
 %hook NSFileManager
+
 - (NSArray *)contentsOfDirectoryAtPath:(NSString *)path error:(NSError **)error {
 	if (TLGetThreadKey(kTLLoadingBundlesKey)) {
 		NSArray *system = %orig;
@@ -398,26 +404,23 @@ related to _imageForResult:
 	
 	return %orig;
 }
+
 %end
 
 %hook NSBundle
+
 - (NSBundle *)initWithPath:(NSString *)path {
 	if (TLGetThreadKey(kTLLoadingBundlesKey)) {
 		NSBundle *bundle = %orig;
+
 		if (bundle == nil && ([path hasPrefix:kTLDefaultSearchBundleDirectory])) {
 			NSString *bundlename = [path substringFromIndex:[kTLDefaultSearchBundleDirectory length]];
 
 			path = [kTLCustomSearchBundleDirectory stringByAppendingString:bundlename];
+
 			if (TLFileExists(path)) {
 				bundle = [[NSBundle alloc] initWithPath:path];
 			}
-
-			/*else {
-				path = [kTLInternalOS6SearchBundleDirectory stringByAppendingString:bundlename];
-				if (TLFileExists(path)) {
-					bundle = [[NSBundle alloc] initWithPath:path];
-				}
-			} */
 		}
 		
 		return bundle;
@@ -425,31 +428,37 @@ related to _imageForResult:
 	
 	return %orig;
 }
+
 %end
 %end
 
 %group TLOS5SearchdHooks
 %hook SDClient
+
 - (void)_cancelQueryWithExternalID:(unsigned int)externalID {
 	if (TLGetThreadKey(kTLExtendedQueryingKey)) TLSetThreadKey(kTLExtendedQueryingKey, NO);
 	%orig;
 }
+
 %end
 %end
 
 %group TLOS6SearchdHooks
 // This allows us to make the query wait for async completion of a datastore (allowing *some* cases to be resolved without complex run loops)
 %hook SDSearchQuery
+
 - (void)storeCompletedSearch:(NSObject<TLSearchDatastore> *)datastore {
 	if ([datastore respondsToSelector:@selector(blockDatastoreComplete)] && [datastore blockDatastoreComplete])
 		return;
 	
 	%orig;
 }
+
 %end
 
 // This makes sure the kTLExtendedQueryingKey thread key is accurate.
 %hook SDClient
+
 - (void)removeActiveQuery:(id)query {
 	NSLog(@"[SearchLoader] Query being cancelled.");
 
@@ -464,6 +473,7 @@ related to _imageForResult:
 			[datastore searchClientDidCancelQuery];
 	}
 }
+
 %end
 %end
 
@@ -471,14 +481,15 @@ related to _imageForResult:
 
 %group TLPreferencesHooks
 %hook PSRootController
-+ (BOOL)processedBundle:(NSDictionary *)specifier parentController:(id)arg2 parentSpecifier:(id)arg3 bundleControllers:(id *)arg4 settings:(id)arg5 {
+
++ (BOOL)processedBundle:(NSDictionary *)specifier parentController:(id)parentController parentSpecifier:(id)parentSpecifier bundleControllers:(id *)bundkeControllers  settings:(id)settings {
 	static BOOL $processedSearchBundle = NO;
 	
 	BOOL ret = %orig;
 	if (!$processedSearchBundle && [[specifier objectForKey:@"bundle"] isEqualToString:@"SearchSettings"]) {
 		MSHookFunction(MSFindSymbol(MSGetImageByName("/System/Library/PrivateFrameworks/Search.framework/Search"), "_SPGetExtendedDomains"), MSHake(SPGetExtendedDomains));
 		
-		const char *displayNameSymbol = kCFCoreFoundationVersionNumber>=800 ? "_SPDisplayNameForDomain" : "_SPDisplayNameForExtendedDomain";
+		const char *displayNameSymbol = TLIsOS7 ? "_SPDisplayNameForDomain" : "_SPDisplayNameForExtendedDomain";
 		MSHookFunction(MSFindSymbol(MSGetImageByName("/System/Library/PrivateFrameworks/Search.framework/Search"), displayNameSymbol), MSHake(SPDisplayNameForExtendedDomain));
 		
 		$processedSearchBundle = YES;
@@ -486,6 +497,7 @@ related to _imageForResult:
 
 	return ret;
 }
+
 %end
 %end
 
@@ -493,19 +505,23 @@ related to _imageForResult:
 
 %group TLAppIndexerHooks
 %hook AppIndexer
+
 - (id)initWithDisplayID:(NSString *)displayID andCategory:(NSString *)category {
 	// Technically this isn't needed because SBSCopyBundlePathForDisplayIdentifier() is only called on that occurence.
 	TLSetThreadKey(kTLAppIndexerInitKey, YES);
 	self = %orig;
 	TLSetThreadKey(kTLAppIndexerInitKey, NO);
 
+
 	return self;
 }
+
 %end
 %end
 
 MSHook(NSString *, SBSCopyBundlePathForDisplayIdentifier, NSString *displayIdentifier) {
 	__block NSString *bundlePath = _SBSCopyBundlePathForDisplayIdentifier(displayIdentifier);
+
 	if (TLGetThreadKey(kTLAppIndexerInitKey) && [[[NSBundle bundleWithPath:bundlePath] infoDictionary] objectForKey:@"SPSearchBundle"] == nil) {
 		[bundlePath release];
 
@@ -520,13 +536,6 @@ MSHook(NSString *, SBSCopyBundlePathForDisplayIdentifier, NSString *displayIdent
 	return bundlePath;
 }
 
-/*%hook SPContentResult
-+ (id)resultWithRecord:(id)record domain:(int)domain displayIdentifier:(NSString *)displayIdentifier query:(NSString *)query {
-	%log;
-	return %orig;
-}
-%end*/
-
 // Constructor
 
 %ctor {
@@ -537,18 +546,20 @@ MSHook(NSString *, SBSCopyBundlePathForDisplayIdentifier, NSString *displayIdent
 		%init(TLPreferencesHooks);
 		return;
 	}
+
+	TLRebuildExtendedDomainCache();
 	
 	%init; // DEBUG. Nothing is actually inside _ungrouped.
 	MSHookFunction(MSFindSymbol(MSGetImageByName("/System/Library/PrivateFrameworks/Search.framework/Search"), "_SPGetExtendedDomains"), MSHake(SPGetExtendedDomains));
 	
-	const char *displayNameSymbol = kCFCoreFoundationVersionNumber>=800 ? "_SPDisplayNameForDomain" : "_SPDisplayNameForExtendedDomain";
+	const char *displayNameSymbol = TLIsOS7 ? "_SPDisplayNameForDomain" : "_SPDisplayNameForExtendedDomain";
 	MSHookFunction(MSFindSymbol(MSGetImageByName("/System/Library/PrivateFrameworks/Search.framework/Search"), displayNameSymbol), MSHake(SPDisplayNameForExtendedDomain));
 	
 	if ([[[NSBundle mainBundle] bundleIdentifier] isEqualToString:@"com.apple.springboard"]) {
 		CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, &_TLSetNeedsInternet, CFSTR("am.theiostre.searchloader.INTERNALNET"), NULL, 0);
 		%init(TLSpringBoardHooks);
 		
-		if (kCFCoreFoundationVersionNumber >= 800) {
+		if (TLIsOS7) {
 			%init(TLOS7SpringBoardHooks);
 		}
 		else if (TLIsOS6) {
@@ -563,6 +574,7 @@ MSHook(NSString *, SBSCopyBundlePathForDisplayIdentifier, NSString *displayIdent
 	
 	else if (TLIsInProcess("searchd")) {
 		%init(TLSearchdHooks);
+
 		if (!TLIsOS6) %init(TLOS5SearchdHooks);
 		else %init(TLOS6SearchdHooks);
 	}
