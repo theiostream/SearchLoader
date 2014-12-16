@@ -34,7 +34,6 @@ static NSString * const kTLAppIndexerInitKey = @"TLAppIndexerInit";
 
 static NSString * const kTLDefaultSearchBundleDirectory = @"/System/Library/SearchBundles/";
 static NSString * const kTLCustomSearchBundleDirectory = @"/Library/SearchLoader/SearchBundles/";
-static NSString * const kTLInternalOS6SearchBundleDirectory = @"/Library/SearchLoader/Internal/OS6/";
 
 extern "C" NSArray *SPGetExtendedDomains();
 extern "C" NSString *SPDisplayIdentifierForDomain(int domain);
@@ -100,9 +99,9 @@ static void TLRebuildExtendedDomainCache() {
 		NSMutableDictionary *extendedDomainInfo = [NSMutableDictionary dictionary];
 		NSString *displayIdentifier = [info objectForKey:@"SPDisplayIdentifier"];
 		NSString *category = [info objectForKey:@"SPCategory"];
-		NSArray *requiredCapabilities = [extendedDomainInfo objectForKey:@"SPRequiredCapabilities"];
-		NSString *displayName = [extendedDomainInfo objectForKey:@"TLDisplayName"];
-		NSNumber *isSearchBundle = [extendedDomainInfo objectForKey:@"TLIsSearchBundle"];
+		NSArray *requiredCapabilities = [info objectForKey:@"SPRequiredCapabilities"];
+		NSString *displayName = [info objectForKey:@"TLDisplayName"];
+		NSNumber *isSearchBundle = [info objectForKey:@"TLIsSearchBundle"];
 
 		[extendedDomainInfo setObject:displayIdentifier forKey:@"SPDisplayIdentifier"];
 		[extendedDomainInfo setObject:category forKey:@"SPCategory"];
@@ -320,8 +319,7 @@ MSHook(NSString *, SPDisplayNameForExtendedDomain, int domain) {
 	});
 
 	NSNumber *value = [imageResults objectForKey:[NSNumber numberWithInteger:domain]];
-	return %orig || [value boolValue];
-
+	return %orig || [value boolValue];
 }
 
 %end
@@ -340,13 +338,14 @@ MSHook(NSString *, SPDisplayNameForExtendedDomain, int domain) {
 	
 	NSMutableArray *ret = [NSMutableArray array];
 
-	unsigned int iterator = kTLExtendedIndexingStart;
-	
-	for (unsigned int i=0;  i<[extendedDomains count]; i++) {
-		if (![[[extendedDomains objectAtIndex:i] objectForKey:@"TLIsSearchBundle"] boolValue])
-			[ret addObject:[NSNumber numberWithUnsignedInt:iterator]];
+	for (NSDictionary *domain in extendedDomains) {
+		if (![[domain objectForKey:@"TLIsSearchBundle"] boolValue]) {
+			NSString *displayIdentifier = [domain objectForKey:@"SPDisplayIdentifier"];
+			NSString *category = [domain objectForKey:@"SPCategory"];
+			NSInteger searchDomain = TLDomain(displayIdentifier, category);
 
-		iterator++;
+			[ret addObject:[NSNumber numberWithUnsignedInt:searchDomain]];
+		}
 	}
 	
 	return ret;

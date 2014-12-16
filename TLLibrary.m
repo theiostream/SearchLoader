@@ -3,6 +3,8 @@
 #include <dlfcn.h>
 #include <notify.h>
 
+NSInteger SPSearchDomainForDisplayIdentifierAndCategory(CFStringRef displayIdentifier, CFStringRef category);
+
 void TLIterateExtensions(void (^handler)(NSString *)) {
 	NSFileManager *fm = [NSFileManager defaultManager];
 	NSString *path = @"/Library/SearchLoader/Applications/";
