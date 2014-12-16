@@ -8,11 +8,10 @@
 #define _TLLIBRARY_INTERNAL_H
 
 #import <Foundation/Foundation.h>
-#define kTLExtendedIndexingStart 15 // I hate this. Please for god's sake remove this.
+#define kTLExtendedIndexingStart 100
 
-#ifndef TLIsOS6
 #define TLIsOS6 (kCFCoreFoundationVersionNumber >= 793.00)
-#endif
+#define TLIsOS7 (kCFCoreFoundationVersionNumber >= 800.00)
 
 extern NSString *const kSPContentAuxiliarySubtitleKey;
 extern NSString *const kSPContentAuxiliaryTitleKey;
