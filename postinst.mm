@@ -1,18 +1,28 @@
 // postinst.mm
 // based on substrate
 
+
+
 #import <Foundation/Foundation.h>
 
-#define AppIndexerPlist_ "/System/Library/LaunchDaemons/com.apple.search.appindexer.plist"
+#ifndef kCFCoreFoundationVersionNumber_iOS_8_0
+#define kCFCoreFoundationVersionNumber_iOS_8_0 1140.10
+#endif
+
 #define SubstrateBootstrap_ "/Library/Frameworks/CydiaSubstrate.framework/Libraries/SubstrateBootstrap.dylib"
 
 int main() {
+	NSString *AppIndexerPlist_;
+	if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_8_0) {
+		AppIndexerPlist_ = @"/Library/LaunchDaemons/com.apple.search.appindexer.plist";
+	} else {
+		AppIndexerPlist_ = @"/System/Library/LaunchDaemons/com.apple.search.appindexer.plist";
+	}
 	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 	
 	// Change configuration by adding Substrate to DYLD_INSERT_LIBRARIES.
-	NSString *file = @AppIndexerPlist_;
-
-	NSMutableDictionary *root = [NSMutableDictionary dictionaryWithContentsOfFile:file];
+	
+	NSMutableDictionary *root = [NSMutableDictionary dictionaryWithContentsOfFile:AppIndexerPlist_];
 	if (root == nil) return 1;
 
 	NSMutableDictionary *environment = [root objectForKey:@"EnvironmentVariables"];
@@ -40,11 +50,12 @@ int main() {
 	NSData *data = [NSPropertyListSerialization dataFromPropertyList:root format:NSPropertyListBinaryFormat_v1_0 errorDescription:&error];
 
 	if (data == nil) return 1;
-	if (![data writeToFile:file atomically:YES]) return 1;
+	if (![data writeToFile:AppIndexerPlist_ atomically:YES]) return 1;
 	
 	// Reload AppIndexer.
-	system("launchctl unload " AppIndexerPlist_);
-	system("launchctl load " AppIndexerPlist_);
+	
+	system([[NSString stringWithFormat: @"launchctl unload %@", AppIndexerPlist_] UTF8String]);
+	system([[NSString stringWithFormat: @"launchctl load %@", AppIndexerPlist_] UTF8String]);
 
 	[pool drain];
 	return 0;
