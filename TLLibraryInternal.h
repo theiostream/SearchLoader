@@ -8,7 +8,6 @@
 #define _TLLIBRARY_INTERNAL_H
 
 #import <Foundation/Foundation.h>
-#define kTLExtendedIndexingStart 100
 
 #define TLIsOS6 (kCFCoreFoundationVersionNumber >= 793.00)
 #define TLIsOS7 (kCFCoreFoundationVersionNumber >= 800.00)

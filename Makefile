@@ -14,6 +14,7 @@ prerm_INSTALL_PATH = /DEBIAN
 ## libspotlight
 LIBRARY_NAME = libspotlight
 libspotlight_FILES = TLLibrary.m
+libspotlight_PRIVATE_FRAMEWORKS = Search
 
 ## SearchLoader
 TWEAK_NAME = SearchLoader

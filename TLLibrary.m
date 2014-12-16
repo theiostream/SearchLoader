@@ -3,6 +3,8 @@
 #include <dlfcn.h>
 #include <notify.h>
 
+NSInteger SPSearchDomainForDisplayIdentifierAndCategory(CFStringRef displayIdentifier, CFStringRef category);
+
 void TLIterateExtensions(void (^handler)(NSString *)) {
 	NSFileManager *fm = [NSFileManager defaultManager];
 	NSString *path = @"/Library/SearchLoader/Applications/";
@@ -17,22 +19,7 @@ void TLIterateExtensions(void (^handler)(NSString *)) {
 
 // check out SPSearchDomainForDisplayIdentifierAndCategory
 NSInteger TLDomain(NSString *displayID, NSString *category) {
-	NSArray *(*SPGetExtendedDomains)(void) = (NSArray *(*)(void))dlsym(RTLD_DEFAULT, "SPGetExtendedDomains");
-	NSArray *domains = (*SPGetExtendedDomains)();
-	
-	NSInteger count = 0;
-	
-	for (NSDictionary *dict in domains) {
-		if ([[dict objectForKey:@"SPDisplayIdentifier"] isEqualToString:displayID] &&
-			[[dict objectForKey:@"SPCategory"] isEqualToString:category]) {
-			return kTLExtendedIndexingStart + count;
-		}
-		
-		count++;
-	}
-	
-	[NSException raise:@"TLInvalidDomainRequestException" format:@"There is no such extended domain registered as requested. (DisplayID: %@; Category: %@).", displayID, category];
-	return -1;
+	return SPSearchDomainForDisplayIdentifierAndCategory((CFStringRef)displayID, (CFStringRef)category);
 }
 
 void TLCommitResults(NSArray *results, NSInteger domain, SDSearchQuery *pipe) {
