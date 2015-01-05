@@ -1,7 +1,7 @@
 Package: am.theiostre.searchloader
 Name: SearchLoader
 Depends: mobilesubstrate, preferenceloader (>= 2.2.0)
-Version: 0.0.1
+Version: 2.3
 Architecture: iphoneos-arm
 Description: loads search bundles in style
 Maintainer: theiostream <q@theiostream.com>
