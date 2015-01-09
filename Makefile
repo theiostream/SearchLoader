@@ -6,9 +6,9 @@ include theos/makefiles/common.mk
 
 ## Install Scripts
 TOOL_NAME = postinst prerm
-postinst_FILES = postinst.mm
+postinst_FILES = postinst.m
 postinst_INSTALL_PATH = /DEBIAN
-prerm_FILES = prerm.mm
+prerm_FILES = prerm.m
 prerm_INSTALL_PATH = /DEBIAN
 
 ## libspotlight
